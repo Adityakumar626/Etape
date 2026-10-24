@@ -1,0 +1,392 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-serif: var(--font-serif);
+  --font-sans: var(--font-sans);
+}
+
+:root {
+  --background: #F7F4EE;
+  --foreground: #242321;
+  --surface-cream: #FAF8F4;
+  --surface-sand: #EFEBE3;
+  --surface-warm: #E9E1D4;
+  --gold-accent: #C6A878;
+  --gold-muted: #D8C3A0;
+  --charcoal: #242321;
+  --espresso: #151412;
+  --muted-text: #8C877D;
+  --border-light: rgba(36, 35, 33, 0.08);
+  --border-medium: rgba(36, 35, 33, 0.16);
+  --btn-bg: #242321;
+  --btn-text: #F7F4EE;
+  --btn-hover: #151412;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow-x: hidden;
+  letter-spacing: -0.01em;
+}
+
+.font-serif {
+  font-family: var(--font-serif), "Cormorant Garamond", Garamond, Georgia, serif;
+}
+
+/* Custom quiet luxury scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--gold-muted);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gold-accent);
+}
+
+/* Image zoom hover effect */
+.editorial-image-container {
+  overflow: hidden;
+}
+
+.editorial-image-container img {
+  transition: transform 1.2s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.editorial-image-container:hover img {
+  transform: scale(1.04);
+}
+
+/* Understated buttons */
+.btn-primary {
+  background-color: var(--btn-bg);
+  color: var(--btn-text);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-primary:hover {
+  background-color: var(--btn-hover);
+  opacity: 0.95;
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: var(--foreground);
+  border: 1px solid var(--border-medium);
+  transition: all 0.3s ease;
+}
+
+.btn-secondary:hover {
+  border-color: var(--foreground);
+  background-color: rgba(36, 35, 33, 0.03);
+}
+
+/* Utilities */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Fluid responsive article typography */
+article {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+article table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.25rem 0;
+  font-size: 0.8125rem;
+  overflow-x: auto;
+  display: block;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (min-width: 640px) {
+  article table {
+    display: table;
+    font-size: 0.875rem;
+    margin: 2rem 0;
+  }
+}
+
+article th {
+  background: var(--surface-sand);
+  color: var(--foreground);
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 0.875rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-medium);
+  font-family: var(--font-serif), serif;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+article td {
+  padding: 0.75rem 0.875rem;
+  border-bottom: 1px solid var(--border-light);
+  color: #383633;
+}
+
+@media (min-width: 640px) {
+  article th {
+    padding: 1rem 1.25rem;
+    font-size: 1.05rem;
+    white-space: normal;
+  }
+  article td {
+    padding: 1rem 1.25rem;
+  }
+}
+
+article tr:last-child td {
+  border-bottom: 1px solid var(--border-medium);
+}
+
+article tr:hover td {
+  background-color: rgba(198, 168, 120, 0.08);
+}
+
+article h1,
+article h2,
+article h3,
+article h4 {
+  color: var(--espresso);
+  margin-top: 1.75rem;
+  margin-bottom: 0.6rem;
+  font-family: var(--font-serif), serif;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+@media (min-width: 640px) {
+  article h1,
+  article h2,
+  article h3,
+  article h4 {
+    margin-top: 2.25rem;
+    margin-bottom: 0.75rem;
+  }
+}
+
+article h1 {
+  font-size: 1.75rem;
+  letter-spacing: -0.02em;
+}
+
+@media (min-width: 640px) {
+  article h1 {
+    font-size: 2.25rem;
+  }
+}
+
+article h2 {
+  font-size: 1.35rem;
+  border-bottom: 1px solid var(--border-light);
+  padding-bottom: 0.5rem;
+  color: var(--foreground);
+  letter-spacing: -0.01em;
+}
+
+@media (min-width: 640px) {
+  article h2 {
+    font-size: 1.75rem;
+    padding-bottom: 0.75rem;
+  }
+}
+
+article h3 {
+  font-size: 1.15rem;
+  color: #524F4A;
+}
+
+@media (min-width: 640px) {
+  article h3 {
+    font-size: 1.35rem;
+  }
+}
+
+article p {
+  color: #3D3A36;
+  line-height: 1.8;
+  margin: 0.9rem 0;
+  font-size: 0.9rem;
+}
+
+@media (min-width: 640px) {
+  article p {
+    line-height: 1.85;
+    margin: 1.1rem 0;
+    font-size: 0.95rem;
+  }
+}
+
+article ul,
+article ol {
+  padding-left: 1.25rem;
+  margin: 0.9rem 0;
+  color: #3D3A36;
+}
+
+@media (min-width: 640px) {
+  article ul,
+  article ol {
+    padding-left: 1.75rem;
+    margin: 1.1rem 0;
+  }
+}
+
+article li {
+  margin-bottom: 0.5rem;
+  line-height: 1.7;
+}
+
+@media (min-width: 640px) {
+  article li {
+    line-height: 1.75;
+  }
+}
+
+article blockquote {
+  border-left: 2px solid var(--gold-accent);
+  background: rgba(233, 225, 212, 0.25);
+  padding: 0.85rem 1.25rem;
+  margin: 1.25rem 0;
+  color: var(--foreground);
+  font-style: italic;
+  font-family: var(--font-serif), serif;
+  font-size: 1.05rem;
+}
+
+@media (min-width: 640px) {
+  article blockquote {
+    padding: 1rem 1.75rem;
+    margin: 1.75rem 0;
+    font-size: 1.15rem;
+  }
+}
+
+article hr {
+  border-color: var(--border-light);
+  margin: 1.75rem 0;
+}
+
+@media (min-width: 640px) {
+  article hr {
+    margin: 2.5rem 0;
+  }
+}
+
+/* ========================================================= */
+/* LUXURY PDF & PRINT DOSSIER STYLES                         */
+/* ========================================================= */
+@media print {
+  @page {
+    margin: 12mm 14mm;
+    size: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background-color: #ffffff !important;
+    color: #11100f !important;
+    font-size: 10pt !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    height: auto !important;
+  }
+
+  header,
+  footer,
+  nav,
+  .no-print,
+  button,
+  form,
+  .sticky {
+    display: none !important;
+  }
+
+  /* Force override any responsive padding and max-widths from Tailwind */
+  div[class*="min-h-"],
+  div[class*="max-w-"],
+  div[class*="mx-auto"],
+  main {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    min-height: 0 !important;
+  }
+
+  /* Compact all vertical gaps between sections */
+  div[class*="space-y-"] > * + *,
+  main[class*="space-y-"] > * + * {
+    margin-top: 0.65rem !important;
+  }
+
+  /* Compact article headers & body prose */
+  article h1,
+  article h2,
+  article h3,
+  article h4 {
+    margin-top: 0.7rem !important;
+    margin-bottom: 0.25rem !important;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  article h1 { font-size: 1.4rem !important; }
+  article h2 { font-size: 1.15rem !important; }
+  article h3 { font-size: 1rem !important; }
+
+  article p {
+    margin: 0.3rem 0 !important;
+    line-height: 1.5 !important;
+    font-size: 9.5pt !important;
+  }
+
+  article ul,
+  article ol {
+    margin: 0.3rem 0 !important;
+    padding-left: 1.1rem !important;
+  }
+
+  article li {
+    margin-bottom: 0.15rem !important;
+    line-height: 1.4 !important;
+  }
+
+  .break-inside-avoid,
+  .avoid-break {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+}

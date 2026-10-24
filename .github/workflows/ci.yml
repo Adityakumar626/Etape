@@ -1,0 +1,123 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  backend-validation:
+    name: Backend Lint & Graph Compilation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          uv sync --frozen
+
+      - name: Verify LangGraph Graph Compilation
+        env:
+          GROQ_API_KEY: "dummy_groq_key_for_compilation"
+          TAVILY_API_KEY: "dummy_tavily_key"
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+        run: |
+          uv run python -c "
+          import sys, os
+          sys.path.insert(0, os.path.join(os.getcwd(), 'src'))
+          from gptrip.backend import travel_graph
+          nodes = list(travel_graph.nodes.keys())
+          print('Graph nodes successfully compiled:', nodes)
+          assert 'supervisor' in nodes
+          assert 'human_approval' in nodes
+          assert 'final_agent' in nodes
+          "
+
+      - name: Run DeepEval & Pytest Agent Evals
+        if: env.GROQ_API_KEY != ''
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+        run: |
+          uv run pytest evals/test_evals.py -v -s
+
+      - name: Verify FastMCP Weather Server syntax
+        run: |
+          uv run python -m py_compile custom_weather_mcp_server.py
+          uv run python -m py_compile mcp_client.py
+          uv run python -m py_compile app.py
+
+  frontend-validation:
+    name: Frontend Typecheck & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Next.js Production Build
+        env:
+          NEXT_PUBLIC_API_URL: "http://localhost:8000"
+        run: npm run build
+
+  docker-validation:
+    name: Docker Build Validation
+    runs-on: ubuntu-latest
+    needs: [backend-validation, frontend-validation]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate Docker Compose Configuration
+        run: |
+          docker compose config
+
+      - name: Build Backend Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: etape-backend:ci-test
+
+      - name: Build Frontend Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          tags: etape-frontend:ci-test
+          build-args: |
+            NEXT_PUBLIC_API_URL=http://localhost:8000
