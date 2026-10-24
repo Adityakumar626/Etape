@@ -748,17 +748,26 @@ graph.add_edge("guardrail_blocked", END)
 
 
 # PostgreSQL Checkpointer (Backed by ConnectionPool for multi-threaded concurrency & auto-reconnect)
-DATABASE_URL = get_database_url()
-
-pool = ConnectionPool(
-    conninfo=DATABASE_URL,
-    max_size=10,
-    open=True,
-    kwargs={"autocommit": True, "row_factory": dict_row},
-)
-
-checkpointer = PostgresSaver(pool)
-checkpointer.setup()
+try:
+    DATABASE_URL = get_database_url()
+    pool = ConnectionPool(
+        conninfo=DATABASE_URL,
+        max_size=10,
+        open=False,
+        kwargs={"autocommit": True, "row_factory": dict_row},
+    )
+    pool.open(wait=True, timeout=5)
+    checkpointer = PostgresSaver(pool)
+    checkpointer.setup()
+except Exception as e:
+    print(f"Warning: PostgreSQL checkpointer initialization failed ({e}). Falling back to in-memory checkpointer.")
+    if "pool" in locals():
+        try:
+            pool.close()
+        except Exception:
+            pass
+    from langgraph.checkpoint.memory import MemorySaver
+    checkpointer = MemorySaver()
 
 travel_graph = graph.compile(checkpointer=checkpointer)
 
