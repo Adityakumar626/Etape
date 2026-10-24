@@ -17,6 +17,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 import json
+import atexit
 
 from langgraph.graph import StateGraph , START, END
 from langgraph.types import interrupt, Command 
@@ -444,7 +445,7 @@ def weather_agent(state: TravelState):
 
 def budget_agent(state: TravelState):
     prompt = f"""
-Analyze whether this trip is realistic for the user's budget.
+Analyze the financial outlay and feasibility for this journey.
 
 User Query:
 {state['user_query']}
@@ -461,13 +462,29 @@ Hotel Results:
 Weather Results:
 {state.get('weather_results', '')}
 
-Return:
-1. Estimated cost categories
-2. Budget risk areas
-3. Money-saving suggestions
-4. Overall feasibility
+CRITICAL: Do NOT use markdown tables or pipes (|). Return clean bullet points using this exact template:
 
-If exact live prices are unavailable, clearly label estimates as approximate.
+### 1. Executive Summary
+- Estimated Total Outlay: [Specific total currency range, e.g. ₹12,00,000 – ₹15,00,000 or $12,000 – $15,000 per traveler]
+- Estimated Daily Velocity: [Specific daily spend range, e.g. ₹2,40,000 – ₹3,00,000 / day or $2,400 – $3,000 / day]
+- Overall Feasibility: [Select one: Highly Feasible | Moderately Feasible | Feasible with Care] - [One brief sentence explanation]
+
+### 2. Capital Allocation Portfolio
+List 4 to 6 categories with specific estimated currency amounts and brief notes:
+- Flights & Aviation: [Amount] - [Brief note on class and carrier]
+- Luxury Accommodations: [Amount] - [Brief note on hotel/villa rate]
+- Fine Dining & Gastronomy: [Amount] - [Brief note on culinary spend]
+- Experiences & Private Access: [Amount] - [Brief note on guides and excursions]
+- Ground Transfers & Chauffeur: [Amount] - [Brief note on local transit]
+- Contingency Reserve: [Amount] - [Brief buffer note]
+
+### 3. Financial Volatility & Risk Zones
+- [Risk 1]: [Brief explanation]
+- [Risk 2]: [Brief explanation]
+
+### 4. Capital Optimization Directives
+- [Tip 1]: [Brief value advice]
+- [Tip 2]: [Brief value advice]
 """
 
     response = llm.invoke(
@@ -757,6 +774,7 @@ try:
         kwargs={"autocommit": True, "row_factory": dict_row},
     )
     pool.open(wait=True, timeout=5)
+    atexit.register(lambda: pool.close() if not pool.closed else None)
     checkpointer = PostgresSaver(pool)
     checkpointer.setup()
 except Exception as e:
@@ -789,6 +807,22 @@ def run_travel_agent(
     }
 
     is_resuming = (resume is not None) or (approved is not None)
+
+    # Defensive resume check:
+    # If the thread is currently paused at an interrupt (e.g. human_approval),
+    # any incoming user message or feedback is treated as the resume directive,
+    # preventing the entire graph from restarting from scratch.
+    if not is_resuming:
+        try:
+            curr_state = travel_graph.get_state(config)
+            if curr_state and curr_state.next and "human_approval" in curr_state.next:
+                is_resuming = True
+                resume = {
+                    "approved": True,
+                    "feedback": (user_input or feedback or "").strip()
+                }
+        except Exception:
+            pass
 
     if is_resuming:
         resume_payload = resume if resume is not None else {

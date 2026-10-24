@@ -97,6 +97,7 @@ interface ParsedBudgetCategory {
 
 interface ParsedBudget {
   feasibility: string;
+  feasibilityProse?: string;
   totalRange: string;
   dailyVelocity: string;
   categories: ParsedBudgetCategory[];
@@ -445,152 +446,231 @@ function parseDynamicBudget(raw?: string): ParsedBudget | null {
 
   const cleaned = raw.replace(/\\n/g, "\n").replace(/\\"/g, '"');
 
-  // 1. Feasibility status
-  let feasibility = "Optimally Feasible";
+  // 1. Feasibility status & prose
+  let feasibilityBadge = "Optimally Feasible";
+  let feasibilityProse = "";
   const fMatch =
-    cleaned.match(/(?:Overall Feasibility|Feasibility)[:\s]*\[?([^\]\n\r]+)\]?/i) ||
-    cleaned.match(/(?:Overall Feasibility|Feasibility)[:\s]*([^\n\r]+)/i);
+    cleaned.match(/(?:Overall Feasibility|Feasibility)[:\s]*\[?([^\]\n\r|]+)\]?/i) ||
+    cleaned.match(/(?:Overall Feasibility|Feasibility)[:\s]*([^\n\r|]+)/i);
   if (fMatch) {
-    feasibility = fMatch[1].replace(/[#*_[\]]/g, "").trim();
-  }
+    const rawFeas = fMatch[1].replace(/[#*_[\]|]/g, "").trim();
+    feasibilityProse = rawFeas;
 
-  // 2. Total Range
-  let totalRange = "";
-  const tMatch = cleaned.match(
-    /(?:Estimated Total Range|Total Estimated Cost|Estimated Total|Total Range|Total Outlay|Total Investment|Total estimated|Total)[:\s]*\[?([^\]\n\r]+)\]?/i
-  );
-  if (tMatch) {
-    totalRange = tMatch[1].replace(/[#*_[\]]/g, "").trim();
-  } else {
-    const currMatch = cleaned.match(
-      /((?:[$€£¥]|US\$)\s*[0-9,]+(?:\s*[-–—to]+\s*(?:[$€£¥]|US\$)?\s*[0-9,]+)?(?:\s*(?:per\s+(?:person|traveler)|\/person))?)/i
-    );
-    if (currMatch) {
-      totalRange = currMatch[1].trim();
+    // Distill a concise, punchy status for the badge/KPI score
+    if (/high|optimal|very feasible|seamless|excellent/i.test(rawFeas)) {
+      feasibilityBadge = "Highly Feasible";
+    } else if (/moderate|fair|conditional|viable/i.test(rawFeas)) {
+      feasibilityBadge = "Moderately Feasible";
+    } else if (/tight|challeng|stretch|risk|constraint/i.test(rawFeas)) {
+      feasibilityBadge = "Feasible with Care";
+    } else if (rawFeas.length <= 22) {
+      feasibilityBadge = rawFeas;
+    } else {
+      feasibilityBadge = "Feasibility Verified";
     }
   }
 
-  // 3. Daily Velocity
-  let dailyVelocity = "";
-  const dMatch = cleaned.match(
-    /(?:Estimated Daily Velocity|Daily Velocity|Daily Average|Per Day)[:\s]*\[?([^\]\n\r]+)\]?/i
-  );
-  if (dMatch) {
-    dailyVelocity = dMatch[1].replace(/[#*_[\]]/g, "").trim();
+  // 2. Helper to clean raw currency/number strings
+  const cleanCurrencyText = (str: string): string => {
+    return str
+      .replace(/[#*_[\]|]/g, "")
+      .replace(/^\s*[-–—:]+\s*/, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  };
+
+  // 3. Extract Total Outlay
+  let totalRange = "";
+  const totalRegexes = [
+    /(?:Estimated Total Outlay|Total Outlay|Estimated Total Range|Total Estimated Cost|Estimated Total|Total Investment)[:\s]*([^\n\r|]+)/i,
+    /Total[:\s]*([^\n\r|]+)/i,
+  ];
+
+  for (const re of totalRegexes) {
+    const m = cleaned.match(re);
+    if (m) {
+      const candidate = cleanCurrencyText(m[1]);
+      // Verify candidate actually contains numeric digits and is not just a column header like '(₹) |'
+      if (/\d/.test(candidate) && candidate.length <= 45) {
+        totalRange = candidate;
+        break;
+      }
+    }
   }
 
-  // Helper to extract bullet items
-  const extractItems = (sectionText: string) => {
-    const lines = sectionText.split("\n");
-    const items: { title: string; desc: string }[] = [];
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("-") && !trimmed.startsWith("*") && !/^\d+\./.test(trimmed)) continue;
-      const m = trimmed.match(/^[-*•\d.]+\s*(?:\*\*(.*?)\*\*|(.*?)):\s*(.*)$/);
-      if (m) {
-        const title = (m[1] || m[2] || "").trim();
-        const desc = (m[3] || "").trim();
-        if (title) {
-          items.push({ title, desc });
-        }
-      } else {
-        const plain = trimmed.replace(/^[-*•\d.]+\s*/, "").replace(/\*\*/g, "").trim();
-        if (plain && plain.length > 5) {
-          const splitColon = plain.split(":");
-          if (splitColon.length > 1) {
-            items.push({ title: splitColon[0].trim(), desc: splitColon.slice(1).join(":").trim() });
+  // Fallback search for total currency if regex grabbed header text
+  if (!totalRange || !/\d/.test(totalRange)) {
+    const currMatch = cleaned.match(
+      /((?:[$€£¥₹]|US\$|INR)\s*[0-9,]+(?:\s*[-–—to]+\s*(?:[$€£¥]|US\$|INR)?\s*[0-9,]+)?(?:\s*(?:per\s+(?:person|traveler)|\/person|total))?)/i
+    );
+    if (currMatch) {
+      totalRange = cleanCurrencyText(currMatch[1]);
+    }
+  }
+
+  // 4. Extract Daily Velocity
+  let dailyVelocity = "";
+  const dailyRegexes = [
+    /(?:Estimated Daily Velocity|Daily Velocity|Daily Average|Daily Spend)[:\s]*([^\n\r|]+)/i,
+    /(?:Per Day|Per day|Daily)[:\s]*([^\n\r|]+)/i,
+  ];
+
+  for (const re of dailyRegexes) {
+    const m = cleaned.match(re);
+    if (m) {
+      const candidate = cleanCurrencyText(m[1]);
+      // Candidate must contain digits and be a concise amount, NOT a full sentence of advice
+      if (/\d/.test(candidate) && candidate.length <= 32 && candidate.split(" ").length <= 5) {
+        dailyVelocity = candidate;
+        break;
+      }
+    }
+  }
+
+  // Fallback search for daily spend amount
+  if (!dailyVelocity || !/\d/.test(dailyVelocity)) {
+    const dailyCurrMatch = cleaned.match(
+      /((?:[$€£¥₹]|US\$|INR)\s*[0-9,]+(?:\s*[-–—to]+\s*(?:[$€£¥₹]|US\$|INR)?\s*[0-9,]+)?\s*(?:\/\s*day|per\s+day))/i
+    );
+    if (dailyCurrMatch) {
+      dailyVelocity = cleanCurrencyText(dailyCurrMatch[1]);
+    } else if (totalRange && /\d/.test(totalRange)) {
+      dailyVelocity = "~" + totalRange.split(/[-–—to]/)[0].trim() + " / day";
+    }
+  }
+
+  // 5. Parse Categories (Handling Markdown Tables, Key-Value Pairs, and Bullets)
+  const categories: ParsedBudgetCategory[] = [];
+  const risks: { title: string; notes: string }[] = [];
+  const optimizations: { title: string; notes: string }[] = [];
+
+  const invalidHeaderTerms = [
+    "estimated cost", "all figures", "approximate", "budget alignment",
+    "seasonal considerations", "recommendation", "bottom line", "executive summary",
+    "capital allocation", "volatility", "risk", "optimization", "saving",
+    "feasibility", "total", "category", "description", "notes", "summary",
+    "overview", "note:", "item", "cost", "breakdown", "portfolio"
+  ];
+
+  const lines = cleaned.split("\n");
+  let currentSection: "summary" | "categories" | "risks" | "optimizations" | "other" = "other";
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const lowerLine = line.toLowerCase();
+
+    // Section detection
+    if (lowerLine.includes("executive summary") || lowerLine.includes("1. executive")) {
+      currentSection = "summary";
+      continue;
+    } else if (
+      lowerLine.includes("capital allocation") ||
+      lowerLine.includes("cost categories") ||
+      lowerLine.includes("cost breakdown") ||
+      lowerLine.includes("2. capital")
+    ) {
+      currentSection = "categories";
+      continue;
+    } else if (
+      lowerLine.includes("volatility") ||
+      lowerLine.includes("risk zones") ||
+      lowerLine.includes("risk areas") ||
+      lowerLine.includes("3. financial")
+    ) {
+      currentSection = "risks";
+      continue;
+    } else if (
+      lowerLine.includes("optimization") ||
+      lowerLine.includes("saving") ||
+      lowerLine.includes("directives") ||
+      lowerLine.includes("4. capital")
+    ) {
+      currentSection = "optimizations";
+      continue;
+    }
+
+    // Skip table header divider lines like |---|---|
+    if (/^\|?\s*[-:]+\s*\|/.test(line)) continue;
+
+    // A) Process Markdown Table Row: | Category | Amount | Notes |
+    if (line.includes("|") && line.split("|").length >= 3) {
+      const parts = line.split("|").map((p) => p.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        const rawTitle = parts[0].replace(/[#*_[\]]/g, "").trim();
+        const titleLower = rawTitle.toLowerCase();
+
+        // Ensure this table row is not a header row
+        const isHeader = invalidHeaderTerms.some((term) => titleLower === term || titleLower.startsWith(term));
+        if (!isHeader && rawTitle.length > 2 && rawTitle.length < 45) {
+          const rawAmount = parts[1].replace(/[#*_[\]]/g, "").trim();
+          const rawNotes = parts.slice(2).join(" ").replace(/[#*_[\]]/g, "").trim();
+
+          if (currentSection === "risks") {
+            risks.push({ title: rawTitle, notes: rawNotes || rawAmount });
+          } else if (currentSection === "optimizations") {
+            optimizations.push({ title: rawTitle, notes: rawNotes || rawAmount });
           } else {
-            items.push({ title: plain, desc: "" });
+            categories.push({
+              title: rawTitle,
+              amount: rawAmount || "Market Calibrated",
+              notes: rawNotes || "Bespoke selection tailored to voyage pacing.",
+            });
+          }
+          continue;
+        }
+      }
+    }
+
+    // B) Process Bullet Items: - Title: Amount - Notes
+    if (line.startsWith("-") || line.startsWith("*") || /^\d+\./.test(line)) {
+      const cleanLine = line.replace(/^[-*•\d.]+\s*/, "").trim();
+      const colonIdx = cleanLine.indexOf(":");
+      if (colonIdx > 0) {
+        const rawTitle = cleanLine.slice(0, colonIdx).replace(/[#*_[\]]/g, "").trim();
+        const rawRest = cleanLine.slice(colonIdx + 1).replace(/[#*_[\]]/g, "").trim();
+        const titleLower = rawTitle.toLowerCase();
+
+        // Verify this is not a section heading or meta-comment
+        const isHeader = invalidHeaderTerms.some((term) => titleLower === term || titleLower.startsWith(term));
+        if (!isHeader && rawTitle.length > 2 && rawTitle.length < 45) {
+          if (currentSection === "risks") {
+            risks.push({ title: rawTitle, notes: rawRest });
+          } else if (currentSection === "optimizations") {
+            optimizations.push({ title: rawTitle, notes: rawRest });
+          } else {
+            let amount = "";
+            let notes = rawRest;
+
+            // Pattern: Amount - Notes or Amount (Notes)
+            const priceMatch = rawRest.match(
+              /^((?:[$€£¥₹]|US\$|INR)\s*[0-9,]+(?:\s*[-–—to]+\s*(?:[$€£¥₹]|US\$|INR)?\s*[0-9,]+)?)\s*(?:[-–—:]\s*(.*)|\((.*)\)|(.*))?$/i
+            );
+            if (priceMatch) {
+              amount = priceMatch[1].trim();
+              notes = (priceMatch[2] || priceMatch[3] || priceMatch[4] || "").trim();
+            } else {
+              const embeddedPrice = rawRest.match(
+                /((?:[$€£¥₹]|US\$|INR)\s*[0-9,]+(?:\s*[-–—to]+\s*(?:[$€£¥₹]|US\$|INR)?\s*[0-9,]+)?)/i
+              );
+              if (embeddedPrice) {
+                amount = embeddedPrice[1].trim();
+              }
+            }
+
+            categories.push({
+              title: rawTitle,
+              amount: amount || "Market Calibrated",
+              notes: notes || "Bespoke selection tailored to voyage pacing.",
+            });
           }
         }
       }
     }
-    return items;
-  };
-
-  const sections = cleaned.split(/(?=(?:^|\n)#{1,4}\s+)/g);
-
-  let categorySectionText = "";
-  let riskSectionText = "";
-  let optSectionText = "";
-
-  for (const sec of sections) {
-    const lower = sec.toLowerCase();
-    if (
-      lower.includes("capital allocation") ||
-      lower.includes("cost categories") ||
-      lower.includes("breakdown")
-    ) {
-      categorySectionText += sec + "\n";
-    } else if (
-      lower.includes("volatility") ||
-      lower.includes("risk") ||
-      lower.includes("budget risk")
-    ) {
-      riskSectionText += sec + "\n";
-    } else if (
-      lower.includes("optimization") ||
-      lower.includes("saving") ||
-      lower.includes("suggestions")
-    ) {
-      optSectionText += sec + "\n";
-    }
   }
 
-  // Categories
-  const rawCatItems = extractItems(categorySectionText || cleaned);
-  const categories: ParsedBudgetCategory[] = [];
-
-  for (const item of rawCatItems) {
-    const titleLower = item.title.toLowerCase();
-    if (
-      titleLower.includes("feasibility") ||
-      titleLower.includes("risk") ||
-      titleLower.includes("saving") ||
-      titleLower.includes("total")
-    ) {
-      continue;
-    }
-
-    let amount = "";
-    let notes = item.desc;
-
-    const priceMatch = item.desc.match(
-      /^((?:[$€£¥]|US\$)\s*[0-9,]+(?:\s*[-–—to]+\s*(?:[$€£¥]|US\$)?\s*[0-9,]+)?)\s*(?:\((.*)\)|[-–—]\s*(.*)|(.*))?$/i
-    );
-    if (priceMatch) {
-      amount = priceMatch[1].trim();
-      notes = (priceMatch[2] || priceMatch[3] || priceMatch[4] || "").trim();
-    } else {
-      const embeddedPrice = item.desc.match(
-        /((?:[$€£¥]|US\$)\s*[0-9,]+(?:\s*[-–—to]+\s*(?:[$€£¥]|US\$)?\s*[0-9,]+)?)/i
-      );
-      if (embeddedPrice) {
-        amount = embeddedPrice[1].trim();
-      }
-    }
-
-    categories.push({
-      title: item.title,
-      amount: amount || "Market Calibrated",
-      notes: notes || item.desc || "Bespoke selection tailored to voyage pacing.",
-    });
-  }
-
-  // Risks
-  const rawRiskItems = extractItems(riskSectionText);
-  const risks = rawRiskItems.map((r) => ({
-    title: r.title,
-    notes: r.desc || "Market fluctuations and peak seasonal availability may impact pricing.",
-  }));
-
-  // Optimizations
-  const rawOptItems = extractItems(optSectionText);
-  const optimizations = rawOptItems.map((o) => ({
-    title: o.title,
-    notes: o.desc || "Curated insider advantage arranged through specialist booking.",
-  }));
-
+  // Fallback defaults if no valid categories were parsed
   if (categories.length === 0) {
     categories.push(
       {
@@ -617,9 +697,10 @@ function parseDynamicBudget(raw?: string): ParsedBudget | null {
   }
 
   return {
-    feasibility: feasibility || "Feasibility Verified",
+    feasibility: feasibilityBadge || "Feasibility Verified",
+    feasibilityProse: feasibilityProse || "All flight, hotel, and private access parameters fit within standard seasonal pacing.",
     totalRange: totalRange || "Inquire for current season rates",
-    dailyVelocity: dailyVelocity || "~$750 - $1,100 / day",
+    dailyVelocity: dailyVelocity || "~$750 – $1,100 / day",
     categories: categories.slice(0, 6),
     risks: risks.slice(0, 4),
     optimizations: optimizations.slice(0, 4),
@@ -1268,17 +1349,17 @@ function ConciergeChatContent() {
                     {/* Master Investment Container */}
                     <div className="border border-[#C8C0B0] bg-[#FFFFFF] p-4 sm:p-7 shadow-sm space-y-6 hover:border-[#11100F] transition-colors break-inside-avoid print:shadow-none print:border-neutral-300">
                       {/* Top Bar: Assessment Category & Verified Badge */}
-                      <div className="flex items-center justify-between gap-2 border-b border-[#D2CABC]/60 pb-3">
-                        <div className="flex items-center gap-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#D2CABC]/60 pb-3">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.25em] text-[#8A6D38] font-bold font-sans">
                             Discreet Capital Audit
                           </span>
-                          <span className="text-[#D2CABC]">&bull;</span>
+                          <span className="text-[#D2CABC] hidden sm:inline">&bull;</span>
                           <span className="font-serif font-medium text-[#11100F] text-xs sm:text-sm">
                             Curated Expenditure &amp; Risk Modeling
                           </span>
                         </div>
-                        <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.15em] sm:tracking-[0.18em] text-[#8A6D38] font-bold font-sans bg-[#FAF8F4] px-2 sm:px-2.5 py-0.5 sm:py-1 border border-[#D2CABC] shrink-0">
+                        <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.15em] sm:tracking-[0.18em] text-[#8A6D38] font-bold font-sans bg-[#FAF8F4] px-2.5 py-1 border border-[#D2CABC] shrink-0 self-start sm:self-auto rounded-sm">
                           {parsedBudget.feasibility}
                         </span>
                       </div>
@@ -1286,21 +1367,21 @@ function ConciergeChatContent() {
                       {/* 1. TOP EXECUTIVE KPI METRICS BAR */}
                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                         {/* Metric A: Total Investment */}
-                        <div className="bg-[#FAF8F4] border border-[#D2CABC]/60 p-3.5 sm:p-4 space-y-1 rounded-sm">
+                        <div className="bg-[#FAF8F4] border border-[#D2CABC]/60 p-3.5 sm:p-4 space-y-1 rounded-sm flex flex-col justify-between h-[110px] min-h-[110px] max-h-[115px] overflow-hidden">
                           <span className="text-[9px] uppercase tracking-[0.2em] text-[#7A7468] font-sans font-semibold flex items-center gap-1">
                             <Wallet className="w-3 h-3 text-[#8A6D38]" />
                             Estimated Outlay
                           </span>
-                          <p className="font-serif text-lg sm:text-2xl text-[#11100F] font-medium leading-snug">
+                          <p className="font-serif text-base sm:text-xl text-[#11100F] font-medium leading-snug truncate" title={parsedBudget.totalRange}>
                             {parsedBudget.totalRange}
                           </p>
-                          <span className="text-[10px] text-[#8A6D38] font-sans block pt-0.5">
+                          <span className="text-[10px] text-[#8A6D38] font-sans block pt-0.5 truncate">
                             Per Traveler &middot; All Included
                           </span>
                         </div>
 
                         {/* Metric B: Feasibility Rating */}
-                        <div className="bg-[#FAF8F4] border border-[#D2CABC]/60 p-3.5 sm:p-4 space-y-1 rounded-sm">
+                        <div className="bg-[#FAF8F4] border border-[#D2CABC]/60 p-3.5 sm:p-4 space-y-1 rounded-sm flex flex-col justify-between h-[110px] min-h-[110px] max-h-[115px] overflow-hidden">
                           <span className="text-[9px] uppercase tracking-[0.2em] text-[#7A7468] font-sans font-semibold flex items-center gap-1">
                             <TrendingUp className="w-3 h-3 text-[#8A6D38]" />
                             Feasibility Score
@@ -1309,40 +1390,47 @@ function ConciergeChatContent() {
                             <span className="w-2 h-2 rounded-full bg-[#8A6D38] animate-pulse shrink-0" />
                             <p
                               className="font-serif text-sm sm:text-lg text-[#11100F] font-medium truncate"
-                              title={parsedBudget.feasibility}
+                              title={parsedBudget.feasibilityProse || parsedBudget.feasibility}
                             >
                               {parsedBudget.feasibility}
                             </p>
                           </div>
-                          <span className="text-[10px] text-[#7A7468] font-sans block">
-                            Market Calibrated Pacing
+                          <span
+                            className="text-[10px] text-[#7A7468] font-sans block truncate"
+                            title={parsedBudget.feasibilityProse}
+                          >
+                            {parsedBudget.feasibilityProse
+                              ? parsedBudget.feasibilityProse.length > 32
+                                ? parsedBudget.feasibilityProse.slice(0, 32) + "..."
+                                : parsedBudget.feasibilityProse
+                              : "Market Calibrated Pacing"}
                           </span>
                         </div>
 
                         {/* Metric C: Daily Velocity */}
-                        <div className="bg-[#FAF8F4] border border-[#D2CABC]/60 p-3.5 sm:p-4 space-y-1 rounded-sm">
+                        <div className="bg-[#FAF8F4] border border-[#D2CABC]/60 p-3.5 sm:p-4 space-y-1 rounded-sm flex flex-col justify-between h-[110px] min-h-[110px] max-h-[115px] overflow-hidden">
                           <span className="text-[9px] uppercase tracking-[0.2em] text-[#7A7468] font-sans font-semibold flex items-center gap-1">
                             <Coins className="w-3 h-3 text-[#8A6D38]" />
                             Daily Velocity
                           </span>
-                          <p className="font-serif text-lg sm:text-2xl text-[#11100F] font-medium leading-snug">
+                          <p className="font-serif text-base sm:text-xl text-[#11100F] font-medium leading-snug truncate" title={parsedBudget.dailyVelocity}>
                             {parsedBudget.dailyVelocity}
                           </p>
-                          <span className="text-[10px] text-[#7A7468] font-sans block pt-0.5">
+                          <span className="text-[10px] text-[#7A7468] font-sans block pt-0.5 truncate">
                             Curated Pacing Average
                           </span>
                         </div>
 
                         {/* Metric D: Pacing Standard */}
-                        <div className="bg-[#FAF8F4] border border-[#D2CABC]/60 p-3.5 sm:p-4 space-y-1 rounded-sm">
+                        <div className="bg-[#FAF8F4] border border-[#D2CABC]/60 p-3.5 sm:p-4 space-y-1 rounded-sm flex flex-col justify-between h-[110px] min-h-[110px] max-h-[115px] overflow-hidden">
                           <span className="text-[9px] uppercase tracking-[0.2em] text-[#7A7468] font-sans font-semibold flex items-center gap-1">
                             <ShieldCheck className="w-3 h-3 text-[#8A6D38]" />
                             Tier Standard
                           </span>
-                          <p className="font-serif text-lg sm:text-xl text-[#11100F] font-medium leading-snug">
+                          <p className="font-serif text-base sm:text-lg text-[#11100F] font-medium leading-snug truncate">
                             Quiet Luxury Tier
                           </p>
-                          <span className="text-[10px] text-[#8A6D38] font-sans block pt-0.5">
+                          <span className="text-[10px] text-[#8A6D38] font-sans block pt-0.5 truncate">
                             5-Star Stays &amp; Private Access
                           </span>
                         </div>
@@ -1364,16 +1452,16 @@ function ConciergeChatContent() {
                             {parsedBudget.categories.map((cat, cIdx) => (
                               <div
                                 key={cIdx}
-                                className="bg-[#FAF8F4] border border-[#D2CABC]/70 p-3.5 space-y-2 hover:border-[#11100F] transition-all rounded-sm flex flex-col justify-between"
+                                className="bg-[#FAF8F4] border border-[#D2CABC]/70 p-3.5 space-y-2 hover:border-[#11100F] transition-all rounded-sm flex flex-col justify-between min-h-[115px]"
                               >
                                 <div className="space-y-1">
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[10px] uppercase tracking-[0.16em] text-[#7A7468] font-sans flex items-center gap-1.5 font-medium">
+                                    <span className="text-[10px] uppercase tracking-[0.16em] text-[#7A7468] font-sans flex items-center gap-1.5 font-medium min-w-0">
                                       {getCategoryIcon(cat.title)}
-                                      <span className="truncate">{cat.title}</span>
+                                      <span className="truncate" title={cat.title}>{cat.title}</span>
                                     </span>
                                   </div>
-                                  <p className="font-serif text-base sm:text-lg text-[#11100F] font-medium pt-0.5">
+                                  <p className="font-serif text-base sm:text-lg text-[#11100F] font-medium pt-0.5 truncate" title={cat.amount}>
                                     {cat.amount}
                                   </p>
                                 </div>
@@ -1675,7 +1763,14 @@ function ConciergeChatContent() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  executeInquiry();
+                  if (data?.status === "awaiting_approval") {
+                    if (prompt.trim()) {
+                      handleApproval(true, prompt.trim());
+                      setPrompt("");
+                    }
+                  } else {
+                    executeInquiry();
+                  }
                 }}
                 className="bg-[#FFFFFF] border border-[#C8C0B0] shadow-[0_12px_32px_-8px_rgba(20,20,19,0.1)] p-3 sm:p-5 space-y-2.5 sm:space-y-3"
               >
@@ -1683,7 +1778,11 @@ function ConciergeChatContent() {
                   type="text"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Ask Sofia to refine pace, add private guides, or reserve dining..."
+                  placeholder={
+                    data?.status === "awaiting_approval"
+                      ? "Submit review directives (e.g. Add Michelin dining, slower mornings) to finalize dossier..."
+                      : "Ask Sofia to refine pace, add private guides, or reserve dining..."
+                  }
                   className="w-full bg-transparent text-sm sm:text-base md:text-lg text-[#11100F] placeholder:text-[#656056] focus:outline-none font-serif font-medium px-1"
                 />
 
@@ -1691,18 +1790,30 @@ function ConciergeChatContent() {
                   <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto no-scrollbar py-0.5">
                     <button
                       type="button"
-                      onClick={() =>
-                        setPrompt("Recommend private Michelin reservations and scenic terraces")
-                      }
+                      onClick={() => {
+                        const directive = "Recommend private Michelin reservations and scenic terraces";
+                        if (data?.status === "awaiting_approval") {
+                          setRefinementInput((prev) => (prev ? `${prev}; ${directive}` : directive));
+                          document.getElementById("refinement-input")?.focus();
+                        } else {
+                          setPrompt(directive);
+                        }
+                      }}
                       className="hover:text-[#11100F] transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap text-[11px] sm:text-xs px-2 py-1 rounded bg-[#FAF8F4] border border-[#D2CABC]/40 sm:border-transparent sm:bg-transparent sm:p-0"
                     >
                       <span>＋ Add dining</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
-                        setPrompt("Make the itinerary more unhurried with slower mornings")
-                      }
+                      onClick={() => {
+                        const directive = "Make the itinerary more unhurried with slower mornings";
+                        if (data?.status === "awaiting_approval") {
+                          setRefinementInput((prev) => (prev ? `${prev}; ${directive}` : directive));
+                          document.getElementById("refinement-input")?.focus();
+                        } else {
+                          setPrompt(directive);
+                        }
+                      }}
                       className="hover:text-[#11100F] transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap text-[11px] sm:text-xs px-2 py-1 rounded bg-[#FAF8F4] border border-[#D2CABC]/40 sm:border-transparent sm:bg-transparent sm:p-0"
                     >
                       <Search className="w-3 h-3 text-[#B89658]" />
@@ -1712,9 +1823,9 @@ function ConciergeChatContent() {
 
                   <button
                     type="submit"
-                    disabled={!prompt.trim() || loading}
+                    disabled={!prompt.trim() || loading || approvalLoading}
                     className="w-8 h-8 sm:w-9 sm:h-9 bg-[#1F1E1C] hover:bg-[#0A0A09] text-white disabled:opacity-30 transition-all flex items-center justify-center rounded-[3px] cursor-pointer shadow-sm shrink-0 ml-1"
-                    title="Send inquiry"
+                    title={data?.status === "awaiting_approval" ? "Apply directives and finalize" : "Send inquiry"}
                   >
                     <ArrowUp className="w-4 h-4" />
                   </button>
