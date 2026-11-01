@@ -838,7 +838,7 @@ function ConciergeChatContent() {
         <div className="flex items-center gap-3.5 sm:gap-4">
           <div className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-full overflow-hidden border border-[#C6A878] shadow-sm shrink-0">
             <Image
-              src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=400&auto=format&fit=crop"
+              src="https://images.unsplash.com/photo-1757071018435-49dae03ed383?q=80&w=400&auto=format&fit=crop"
               alt="Sofia Laurent"
               fill
               className="object-cover"
